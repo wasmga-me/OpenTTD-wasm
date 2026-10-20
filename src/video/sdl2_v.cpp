@@ -136,8 +136,17 @@ bool VideoDriver_SDL_Base::CreateMainWindow(uint w, uint h, uint flags)
 {
 	if (this->sdl_window != nullptr) return true;
 
+#ifdef __EMSCRIPTEN__
+	/* The page sizes the canvas (wg_resize), not SDL from the browser window. */
+	flags |= SDL_WINDOW_SHOWN;
+#else
 	flags |= SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
+#endif
 
+#ifdef __EMSCRIPTEN__
+	/* A full screen setting saved elsewhere: the page owns full screen. */
+	_fullscreen = false;
+#endif
 	if (_fullscreen) {
 		flags |= SDL_WINDOW_FULLSCREEN;
 	}
@@ -630,8 +639,26 @@ void VideoDriver_SDL_Base::InputLoop()
 	if (old_ctrl_pressed != _ctrl_pressed) HandleCtrlChanged();
 }
 
+#ifdef __EMSCRIPTEN__
+static int _wg_width = 0;
+static int _wg_height = 0;
+
+/** The page's game area changed size: the game takes it at the top of the next frame. */
+extern "C" EMSCRIPTEN_KEEPALIVE void wg_resize(int w, int h)
+{
+	_wg_width = w;
+	_wg_height = h;
+}
+#endif
+
 void VideoDriver_SDL_Base::LoopOnce()
 {
+#ifdef __EMSCRIPTEN__
+	if (_wg_width > 0 && _wg_height > 0) {
+		this->ChangeResolution(_wg_width, _wg_height);
+		_wg_width = _wg_height = 0;
+	}
+#endif
 	if (_exit_game) {
 #ifdef __EMSCRIPTEN__
 		/* Emscripten is event-driven, and as such the main loop is inside
@@ -689,6 +716,10 @@ bool VideoDriver_SDL_Base::ChangeResolution(int w, int h)
 
 bool VideoDriver_SDL_Base::ToggleFullscreen(bool fullscreen)
 {
+#ifdef __EMSCRIPTEN__
+	/* The page owns full screen. */
+	return !fullscreen;
+#endif
 	/* Remember current window size */
 	int w, h;
 	SDL_GetWindowSize(this->sdl_window, &w, &h);
