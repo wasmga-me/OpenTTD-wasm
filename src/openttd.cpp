@@ -91,6 +91,7 @@
 #ifdef __EMSCRIPTEN__
 #	include <emscripten.h>
 #	include <emscripten/html5.h>
+#	include <filesystem>
 #endif
 
 #include "safeguards.h"
@@ -816,6 +817,9 @@ int openttd_main(std::span<std::string_view> arguments)
 
 void HandleExitGameRequest()
 {
+#ifdef __EMSCRIPTEN__
+	return;
+#endif
 	if (_game_mode == GM_MENU || _game_mode == GM_BOOTSTRAP) { // do not ask to quit on the main screen
 		_exit_game = true;
 	} else if (_settings_client.gui.autosave_on_exit) {
@@ -1333,8 +1337,61 @@ bool RequestNewGRFScan(NewGRFScanCallback *callback)
 	return true;
 }
 
+#ifdef __EMSCRIPTEN__
+/* The play page's hooks: the Resume snapshot, and writing the player's files
+ * before the page goes (the game never quits, so it would not write them). */
+static bool _wg_snapshot_wanted = false;
+static bool _wg_restore_wanted = false;
+static bool _wg_files_wanted = false;
+static int _wg_snapshot_count = 0;
+
+extern "C" {
+/** Asks for the game in progress in /wg/snapshot.sav, written at the top of the next game loop; none on the title screen or in the editor. */
+EMSCRIPTEN_KEEPALIVE void wg_request_snapshot() { _wg_snapshot_wanted = true; }
+/** Goes up each time a snapshot is written (or found to be none). */
+EMSCRIPTEN_KEEPALIVE int wg_snapshot_count() { return _wg_snapshot_count; }
+/** Loads /wg/restore.sav on the next game loop. */
+EMSCRIPTEN_KEEPALIVE void wg_restore() { _wg_restore_wanted = true; }
+/** Writes the settings, hotkeys, window sizes and high scores on the next game loop. */
+EMSCRIPTEN_KEEPALIVE void wg_save_files() { _wg_files_wanted = true; }
+}
+
+static void WgPageRequests()
+{
+	if (_wg_files_wanted) {
+		_wg_files_wanted = false;
+		SaveToConfig();
+		SaveHotkeysToConfig();
+		WindowDesc::SaveToConfig();
+		SaveToHighScore();
+	}
+	if (_wg_restore_wanted) {
+		_wg_restore_wanted = false;
+		_file_to_saveload.name = "/wg/restore.sav";
+		_file_to_saveload.SetMode(FIOS_TYPE_FILE, SLO_LOAD);
+		_switch_mode = SM_LOAD_GAME;
+		return;
+	}
+	if (_wg_snapshot_wanted && _switch_mode == SM_NONE) {
+		_wg_snapshot_wanted = false;
+		std::filesystem::remove("/wg/snapshot.sav");
+		if (_game_mode == GM_NORMAL && !_networking) {
+			/* Quick to write, as the page asks every few seconds. */
+			std::string format = _savegame_format;
+			_savegame_format = "zlib:1";
+			SaveOrLoad("/wg/snapshot.sav", SLO_SAVE, DFT_GAME_FILE, NO_DIRECTORY, false);
+			_savegame_format = format;
+		}
+		_wg_snapshot_count++;
+	}
+}
+#endif
+
 void GameLoop()
 {
+#ifdef __EMSCRIPTEN__
+	WgPageRequests();
+#endif
 	if (_game_mode == GM_BOOTSTRAP) {
 		/* Check for UDP stuff */
 		if (_network_available) NetworkBackgroundLoop();
