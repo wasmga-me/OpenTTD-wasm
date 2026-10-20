@@ -82,6 +82,12 @@ std::optional<std::string_view> MusicDriver_FluidSynth::Start(const StringList &
 	Debug(driver, 1, "Fluidsynth: sf {}", sfont_name.has_value() ? *sfont_name : "(null)");
 
 	/* Create the settings. */
+#ifdef __EMSCRIPTEN__
+	/* Keep the synth's warnings about the songs out of the page's console. */
+	fluid_set_log_function(FLUID_WARN, nullptr, nullptr);
+	fluid_set_log_function(FLUID_INFO, nullptr, nullptr);
+	fluid_set_log_function(FLUID_DBG, nullptr, nullptr);
+#endif
 	_midi.settings = new_fluid_settings();
 	if (_midi.settings == nullptr) return "Could not create midi settings";
 
