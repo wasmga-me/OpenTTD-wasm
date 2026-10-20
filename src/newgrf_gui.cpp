@@ -1285,8 +1285,10 @@ struct NewGRFWindow : public Window, NewGRFScanCallback {
 			text = STR_INTRO_ONLINE_CONTENT;
 			tool_tip = STR_INTRO_TOOLTIP_ONLINE_CONTENT;
 		}
+#ifndef __EMSCRIPTEN__
 		this->GetWidget<NWidgetCore>(WID_NS_CONTENT_DOWNLOAD)->SetStringTip(text, tool_tip);
 		this->GetWidget<NWidgetCore>(WID_NS_CONTENT_DOWNLOAD2)->SetStringTip(text, tool_tip);
+#endif
 
 		this->SetWidgetDisabledState(WID_NS_PRESET_SAVE, has_missing);
 	}
@@ -1792,8 +1794,10 @@ static constexpr std::initializer_list<NWidgetPart> _nested_newgrf_actives_widge
 				NWidget(NWID_VERTICAL, NWidContainerFlag::EqualSize),
 					NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_NS_RESCAN_FILES2), SetFill(1, 0), SetResize(1, 0),
 							SetStringTip(STR_NEWGRF_SETTINGS_RESCAN_FILES, STR_NEWGRF_SETTINGS_RESCAN_FILES_TOOLTIP),
+#ifndef __EMSCRIPTEN__
 					NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_NS_CONTENT_DOWNLOAD2), SetFill(1, 0), SetResize(1, 0),
 							SetStringTip(STR_INTRO_ONLINE_CONTENT, STR_INTRO_TOOLTIP_ONLINE_CONTENT),
+#endif
 				EndContainer(),
 			EndContainer(),
 		EndContainer(),
@@ -1826,8 +1830,10 @@ static constexpr std::initializer_list<NWidgetPart> _nested_newgrf_availables_wi
 			NWidget(NWID_VERTICAL),
 				NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_NS_RESCAN_FILES), SetFill(1, 0), SetResize(1, 0),
 						SetStringTip(STR_NEWGRF_SETTINGS_RESCAN_FILES, STR_NEWGRF_SETTINGS_RESCAN_FILES_TOOLTIP),
+#ifndef __EMSCRIPTEN__
 				NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_NS_CONTENT_DOWNLOAD), SetFill(1, 0), SetResize(1, 0),
 						SetStringTip(STR_INTRO_ONLINE_CONTENT, STR_INTRO_TOOLTIP_ONLINE_CONTENT),
+#endif
 			EndContainer(),
 		EndContainer(),
 	EndContainer(),

@@ -36,6 +36,7 @@ enum GameOptionsWidgets : WidgetID {
 	WID_GO_GUI_FONT_AA_TEXT,       ///< Text for anti-alias toggle.
 	WID_GO_BASE_GRF_DROPDOWN,      ///< Use to select a base GRF.
 	WID_GO_BASE_GRF_PARAMETERS,    ///< Base GRF parameters.
+	WID_GO_DISPLAY_SEL, ///< Selection to hide the display frame.
 	WID_GO_BASE_GRF_CONTENT_DOWNLOAD, ///< 'Get Content' button for base GRF.
 	WID_GO_BASE_GRF_OPEN_URL,      ///< Open base GRF URL.
 	WID_GO_BASE_GRF_TEXTFILE,      ///< Open base GRF readme, changelog (+1) or license (+2).

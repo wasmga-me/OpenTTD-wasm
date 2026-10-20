@@ -115,7 +115,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_load_dialog_widgets 
 		NWidget(NWID_VERTICAL),
 			NWidget(WWT_PANEL, COLOUR_GREY, WID_SL_DETAILS), SetResize(1, 1), SetFill(1, 1),
 			EndContainer(),
+#ifndef __EMSCRIPTEN__
 			NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_SL_MISSING_NEWGRFS), SetStringTip(STR_NEWGRF_SETTINGS_FIND_MISSING_CONTENT_BUTTON, STR_NEWGRF_SETTINGS_FIND_MISSING_CONTENT_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+#endif
 			NWidget(NWID_HORIZONTAL),
 				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
 					NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_SL_NEWGRF_INFO), SetStringTip(STR_MAPGEN_NEWGRF_SETTINGS, STR_MAPGEN_NEWGRF_SETTINGS_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
@@ -166,8 +168,10 @@ static constexpr std::initializer_list<NWidgetPart> _nested_load_heightmap_dialo
 	EndContainer(),
 	/* Online Content and Load button */
 	NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+#ifndef __EMSCRIPTEN__
 		NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_SL_CONTENT_DOWNLOAD), SetResize(1, 0), SetFill(1, 0),
 				SetStringTip(STR_INTRO_ONLINE_CONTENT, STR_INTRO_TOOLTIP_ONLINE_CONTENT),
+#endif
 		NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_SL_LOAD_BUTTON), SetResize(1, 0), SetFill(1, 0),
 				SetStringTip(STR_SAVELOAD_LOAD_BUTTON, STR_SAVELOAD_LOAD_HEIGHTMAP_TOOLTIP),
 		NWidget(WWT_RESIZEBOX, COLOUR_GREY),
@@ -400,7 +404,11 @@ public:
 		this->filename_editbox.ok_button = WID_SL_SAVE_GAME;
 
 		this->CreateNestedTree();
+#ifndef __EMSCRIPTEN__
 		if (this->fop == SLO_LOAD && this->abstract_filetype == FT_SAVEGAME) {
+#else
+		{
+#endif
 			this->GetWidget<NWidgetStacked>(WID_SL_CONTENT_DOWNLOAD_SEL)->SetDisplayedPlane(SZSP_HORIZONTAL);
 		}
 
@@ -930,8 +938,10 @@ public:
 						}
 						this->SetWidgetDisabledState(WID_SL_LOAD_BUTTON, disabled);
 						this->SetWidgetDisabledState(WID_SL_NEWGRF_INFO, !_load_check_data.HasNewGrfs());
+#ifndef __EMSCRIPTEN__
 						this->SetWidgetDisabledState(WID_SL_MISSING_NEWGRFS,
 								!_load_check_data.HasNewGrfs() || _load_check_data.grf_compatibility == GLC_ALL_GOOD);
+#endif
 						break;
 					}
 

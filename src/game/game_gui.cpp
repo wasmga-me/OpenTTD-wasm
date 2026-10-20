@@ -54,7 +54,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_gs_config_widgets = 
 			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
 				NWidget(NWID_VERTICAL, NWidContainerFlag::EqualSize),
 					NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_GSC_CHANGE), SetFill(1, 1), SetResize(1, 0), SetStringTip(STR_AI_CONFIG_CHANGE_GAMESCRIPT, STR_AI_CONFIG_CHANGE_TOOLTIP),
+#ifndef __EMSCRIPTEN__
 					NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_GSC_CONTENT_DOWNLOAD), SetFill(1, 1), SetResize(1, 0), SetStringTip(STR_INTRO_ONLINE_CONTENT, STR_INTRO_TOOLTIP_ONLINE_CONTENT),
+#endif
 				EndContainer(),
 				NWidget(NWID_VERTICAL, NWidContainerFlag::EqualSize),
 					NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),

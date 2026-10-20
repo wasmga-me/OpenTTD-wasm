@@ -446,6 +446,10 @@ struct GameOptionsWindow : Window {
 		this->SetTab(GameOptionsWindow::active_tab);
 
 		if constexpr (!NetworkSurveyHandler::IsSurveyPossible()) this->GetWidget<NWidgetStacked>(WID_GO_SURVEY_SEL)->SetDisplayedPlane(SZSP_NONE);
+#ifdef __EMSCRIPTEN__
+		/* The page sizes the game and owns full screen. */
+		this->GetWidget<NWidgetStacked>(WID_GO_DISPLAY_SEL)->SetDisplayedPlane(SZSP_NONE);
+#endif
 	}
 
 	void OnInit() override
@@ -773,7 +777,12 @@ struct GameOptionsWindow : Window {
 
 	void SetTab(WidgetID widget)
 	{
+#ifdef __EMSCRIPTEN__
+		/* No social platforms to integrate with in a browser, so no Social tab. */
+		this->SetWidgetsLoweredState(false, WID_GO_TAB_GENERAL, WID_GO_TAB_GRAPHICS, WID_GO_TAB_SOUND, WID_GO_TAB_ADVANCED);
+#else
 		this->SetWidgetsLoweredState(false, WID_GO_TAB_GENERAL, WID_GO_TAB_GRAPHICS, WID_GO_TAB_SOUND, WID_GO_TAB_ADVANCED, WID_GO_TAB_SOCIAL);
+#endif
 		this->LowerWidget(widget);
 		GameOptionsWindow::active_tab = widget;
 
@@ -1560,7 +1569,9 @@ struct GameOptionsWindow : Window {
 			this->SetWidgetDisabledState(WID_GO_BASE_MUSIC_TEXTFILE + tft, BaseMusic::GetUsedSet() == nullptr || !BaseMusic::GetUsedSet()->GetTextfile(tft).has_value());
 		}
 
+#ifndef __EMSCRIPTEN__
 		this->SetWidgetsDisabledState(!_network_available, WID_GO_BASE_GRF_CONTENT_DOWNLOAD, WID_GO_BASE_SFX_CONTENT_DOWNLOAD, WID_GO_BASE_MUSIC_CONTENT_DOWNLOAD);
+#endif
 
 		/* Update which settings are to be visible. */
 		RestrictionMode min_level = (this->filter.mode <= RM_ALL) ? this->filter.mode : RM_BASIC;
@@ -1613,7 +1624,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_game_options_widgets
 			NWidget(WWT_TEXTBTN, GAME_OPTIONS_BUTTON, WID_GO_TAB_GENERAL),  SetMinimalTextLines(2, 0), SetStringTip(STR_GAME_OPTIONS_TAB_GENERAL, STR_GAME_OPTIONS_TAB_GENERAL_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
 			NWidget(WWT_TEXTBTN, GAME_OPTIONS_BUTTON, WID_GO_TAB_GRAPHICS), SetMinimalTextLines(2, 0), SetStringTip(STR_GAME_OPTIONS_TAB_GRAPHICS, STR_GAME_OPTIONS_TAB_GRAPHICS_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
 			NWidget(WWT_TEXTBTN, GAME_OPTIONS_BUTTON, WID_GO_TAB_SOUND),    SetMinimalTextLines(2, 0), SetStringTip(STR_GAME_OPTIONS_TAB_SOUND, STR_GAME_OPTIONS_TAB_SOUND_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+#ifndef __EMSCRIPTEN__
 			NWidget(WWT_TEXTBTN, GAME_OPTIONS_BUTTON, WID_GO_TAB_SOCIAL),   SetMinimalTextLines(2, 0), SetStringTip(STR_GAME_OPTIONS_TAB_SOCIAL, STR_GAME_OPTIONS_TAB_SOCIAL_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+#endif
 			NWidget(WWT_TEXTBTN, GAME_OPTIONS_BUTTON, WID_GO_TAB_ADVANCED), SetMinimalTextLines(2, 0), SetStringTip(STR_GAME_OPTIONS_TAB_ADVANCED, STR_GAME_OPTIONS_TAB_ADVANCED_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
 		EndContainer(),
 	EndContainer(),
@@ -1680,6 +1693,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_game_options_widgets
 						EndContainer(),
 					EndContainer(),
 
+					NWidget(NWID_SELECTION, INVALID_COLOUR, WID_GO_DISPLAY_SEL),
 					NWidget(WWT_FRAME, GAME_OPTIONS_BACKGROUND), SetStringTip(STR_GAME_OPTIONS_DISPLAY), SetTextStyle(GAME_OPTIONS_FRAME),
 						NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
 							NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0),
@@ -1709,12 +1723,15 @@ static constexpr std::initializer_list<NWidgetPart> _nested_game_options_widgets
 							EndContainer(),
 						EndContainer(),
 					EndContainer(),
+					EndContainer(),
 
 					NWidget(WWT_FRAME, GAME_OPTIONS_BACKGROUND), SetStringTip(STR_GAME_OPTIONS_BASE_GRF), SetTextStyle(GAME_OPTIONS_FRAME), SetPIP(0, WidgetDimensions::unscaled.vsep_sparse, 0), SetFill(1, 0),
 						NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
 							NWidget(WWT_DROPDOWN, GAME_OPTIONS_BUTTON, WID_GO_BASE_GRF_DROPDOWN), SetToolTip(STR_GAME_OPTIONS_BASE_GRF_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
 							NWidget(WWT_PUSHTXTBTN, GAME_OPTIONS_BUTTON, WID_GO_BASE_GRF_PARAMETERS), SetStringTip(STR_NEWGRF_SETTINGS_SET_PARAMETERS),
+#ifndef __EMSCRIPTEN__
 							NWidget(WWT_PUSHTXTBTN, GAME_OPTIONS_BUTTON, WID_GO_BASE_GRF_CONTENT_DOWNLOAD), SetStringTip(STR_GAME_OPTIONS_ONLINE_CONTENT, STR_GAME_OPTIONS_ONLINE_CONTENT_TOOLTIP),
+#endif
 						EndContainer(),
 						NWidget(WWT_TEXT, INVALID_COLOUR, WID_GO_BASE_GRF_DESCRIPTION), SetStringTip(STR_EMPTY, STR_GAME_OPTIONS_BASE_GRF_DESCRIPTION_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
 						NWidget(NWID_VERTICAL),
@@ -1749,7 +1766,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_game_options_widgets
 					NWidget(WWT_FRAME, GAME_OPTIONS_BACKGROUND), SetStringTip(STR_GAME_OPTIONS_BASE_SFX), SetTextStyle(GAME_OPTIONS_FRAME), SetPIP(0, WidgetDimensions::unscaled.vsep_sparse, 0),
 						NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
 							NWidget(WWT_DROPDOWN, GAME_OPTIONS_BUTTON, WID_GO_BASE_SFX_DROPDOWN), SetToolTip(STR_GAME_OPTIONS_BASE_SFX_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+#ifndef __EMSCRIPTEN__
 							NWidget(WWT_PUSHTXTBTN, GAME_OPTIONS_BUTTON, WID_GO_BASE_SFX_CONTENT_DOWNLOAD), SetStringTip(STR_GAME_OPTIONS_ONLINE_CONTENT, STR_GAME_OPTIONS_ONLINE_CONTENT_TOOLTIP),
+#endif
 						EndContainer(),
 						NWidget(WWT_EMPTY, INVALID_COLOUR, WID_GO_BASE_SFX_DESCRIPTION), SetMinimalTextLines(1, 0), SetToolTip(STR_GAME_OPTIONS_BASE_SFX_DESCRIPTION_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
 						NWidget(NWID_VERTICAL),
@@ -1767,7 +1786,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_game_options_widgets
 					NWidget(WWT_FRAME, GAME_OPTIONS_BACKGROUND), SetStringTip(STR_GAME_OPTIONS_BASE_MUSIC), SetTextStyle(GAME_OPTIONS_FRAME), SetPIP(0, WidgetDimensions::unscaled.vsep_sparse, 0),
 						NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
 							NWidget(WWT_DROPDOWN, GAME_OPTIONS_BUTTON, WID_GO_BASE_MUSIC_DROPDOWN), SetToolTip(STR_GAME_OPTIONS_BASE_MUSIC_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+#ifndef __EMSCRIPTEN__
 							NWidget(WWT_PUSHTXTBTN, GAME_OPTIONS_BUTTON, WID_GO_BASE_MUSIC_CONTENT_DOWNLOAD), SetStringTip(STR_GAME_OPTIONS_ONLINE_CONTENT, STR_GAME_OPTIONS_ONLINE_CONTENT_TOOLTIP),
+#endif
 						EndContainer(),
 						NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
 							NWidget(WWT_EMPTY, INVALID_COLOUR, WID_GO_BASE_MUSIC_DESCRIPTION), SetMinimalTextLines(1, 0), SetToolTip(STR_GAME_OPTIONS_BASE_MUSIC_DESCRIPTION_TOOLTIP), SetFill(1, 0), SetResize(1, 0),

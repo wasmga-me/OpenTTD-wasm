@@ -36,7 +36,12 @@ public:
 
 	constexpr static bool IsSurveyPossible()
 	{
+#ifdef __EMSCRIPTEN__
+		/* Single player only: nothing is sent from the web build. */
+		return false;
+#else
 		return true;
+#endif
 	}
 
 private:
