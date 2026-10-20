@@ -1,0 +1,651 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2891bee..3172552 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -365,47 +365,17 @@ if(EMSCRIPTEN)
+     target_link_libraries(WASM::WASM INTERFACE "-s WASM_BIGINT")
+     add_definitions(-s DISABLE_EXCEPTION_CATCHING=0)
+ 
+-    # Export functions to Javascript.
+-    target_link_libraries(WASM::WASM INTERFACE "-s EXPORTED_FUNCTIONS='[\"_main\", \"_em_openttd_add_server\"]' -s EXPORTED_RUNTIME_METHODS='[\"cwrap\"]'")
+-
+-    # Preload all the files we generate during build.
+-    # As we do not compile with FreeType / FontConfig, we also have no way to
+-    # render several languages (like Chinese, ..), so where do you draw the
+-    # line what languages to include and which not? In the end, especially as
+-    # the more languages you add the slower downloading becomes, we decided to
+-    # only ship the English language.
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_BINARY_DIR}/baseset@/baseset")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_BINARY_DIR}/lang/english.lng@/lang/english.lng")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/bin/ai@/ai")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/bin/game@/game")
+-    # Documentation files for the in-game text file viewer
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/README.md@/README.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/CREDITS.md@/CREDITS.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/CONTRIBUTING.md@/CONTRIBUTING.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/COPYING.md@/COPYING.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/known-bugs.md@/known-bugs.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/changelog.md@/changelog.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/docs/admin_network.md@/docs/admin_network.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/docs/debugging_desyncs.md@/docs/debugging_desyncs.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/docs/desync.md@/docs/desync.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/docs/directory_structure.md@/docs/directory_structure.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/docs/eints.md@/docs/eints.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/docs/fonts.md@/docs/fonts.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/docs/linkgraph.md@/docs/linkgraph.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/docs/logging_and_performance_metrics.md@/docs/logging_and_performance_metrics.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/docs/multiplayer.md@/docs/multiplayer.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/docs/savegame_format.md@/docs/savegame_format.md")
+-    target_link_libraries(WASM::WASM INTERFACE "--preload-file ${CMAKE_SOURCE_DIR}/docs/symbol_server.md@/docs/symbol_server.md")
+-
+-    # We use IDBFS for persistent storage.
+-    target_link_libraries(WASM::WASM INTERFACE "-lidbfs.js")
+-
+-    # Use custom pre-js and shell.html.
++    # Export functions to Javascript. The play page runs main() once it has
++    # written the game's files, and the player's own files are kept by the page
++    # rather than in an IndexedDB mount.
++    target_link_libraries(WASM::WASM INTERFACE "-s EXPORTED_FUNCTIONS='[\"_main\", \"_em_openttd_add_server\"]' -s EXPORTED_RUNTIME_METHODS='[\"cwrap\", \"FS\", \"callMain\"]'")
++    target_link_libraries(WASM::WASM INTERFACE "-s INVOKE_RUN=0 -s FORCE_FILESYSTEM=1 -s ENVIRONMENT=web")
++
++    # Use custom pre-js.
+     target_link_libraries(WASM::WASM INTERFACE "--pre-js ${CMAKE_SOURCE_DIR}/os/emscripten/pre.js")
+-    target_link_libraries(WASM::WASM INTERFACE "--shell-file ${CMAKE_SOURCE_DIR}/os/emscripten/shell.html")
+ 
+-    # Build the .html (which builds the .js, .wasm, and .data too).
+-    set_target_properties(openttd PROPERTIES SUFFIX ".html")
++    # Build the .js and .wasm.
++    set_target_properties(openttd PROPERTIES SUFFIX ".js")
+     target_link_libraries(openttd WASM::WASM)
+ endif()
+ 
+diff --git a/os/emscripten/pre.js b/os/emscripten/pre.js
+index 8e46ae3..d9fe6b7 100644
+--- a/os/emscripten/pre.js
++++ b/os/emscripten/pre.js
+@@ -1,89 +1,8 @@
+-Module.arguments.push('-mnull', '-snull', '-vsdl');
+-Module['websocket'] = { url: function(host, port, proto) {
+-    /* openttd.org hosts a WebSocket proxy for the content service. */
+-    if (host == "content.openttd.org" && port == 3978 && proto == "tcp") {
+-        return "wss://bananas-server.openttd.org/";
+-    }
+-
+-    /* Everything else just tries to make a default WebSocket connection.
+-     * If you run your own server you can setup your own WebSocket proxy in
+-     * front of it and let people connect to your server via the proxy. You
+-     * are best to add another "if" statement as above for this. */
+-
+-    if (location.protocol === 'https:') {
+-        /* Insecure WebSockets do not work over HTTPS, so we force
+-         * secure ones. */
+-        return 'wss://';
+-    } else {
+-        /* Use the default provided by Emscripten. */
+-        return null;
+-    }
+-} };
+-
+-Module.preRun.push(function() {
+-    personal_dir = '/home/web_user/.openttd';
+-    content_download_dir = personal_dir + '/content_download'
+-
+-    /* Because of the "-c" above, all user-data is stored in /user_data. */
+-    FS.mkdir(personal_dir);
+-    FS.mount(IDBFS, {}, personal_dir);
+-
+-    Module.addRunDependency('syncfs');
+-    FS.syncfs(true, function (err) {
+-        Module.removeRunDependency('syncfs');
+-    });
+-
+-    window.openttd_syncfs_shown_warning = false;
+-    window.openttd_syncfs = function(callback) {
+-        /* Copy the virtual FS to the persistent storage. */
+-        FS.syncfs(false, function (err) {
+-            /* On first time, warn the user about the volatile behaviour of
+-             * persistent storage. */
+-            if (!window.openttd_syncfs_shown_warning) {
+-                window.openttd_syncfs_shown_warning = true;
+-                Module.onWarningFs();
+-            }
+-
+-            if (callback) callback();
+-        });
+-    }
+-
+-    window.openttd_exit = function() {
+-        window.openttd_syncfs(Module.onExit);
+-    }
+-
+-    window.openttd_abort = function() {
+-        window.openttd_syncfs(Module.onAbort);
+-    }
+-
+-    window.openttd_bootstrap = function(current, total) {
+-        Module.onBootstrap(current, total);
+-    }
+-
+-    window.openttd_bootstrap_failed = function() {
+-        Module.onBootstrapFailed();
+-    }
+-
+-    window.openttd_bootstrap_reload = function() {
+-        window.openttd_syncfs(function() {
+-            Module.onBootstrapReload();
+-            setTimeout(function() {
+-                location.reload();
+-            }, 1000);
+-        });
+-    }
+-
+-    window.openttd_server_list = function() {
+-        add_server = Module.cwrap("em_openttd_add_server", null, ["string"]);
+-
+-        /* Add servers that support WebSocket here. Examples:
+-         *  add_server("localhost");
+-         *  add_server("localhost:3979");
+-         *  add_server("127.0.0.1:3979");
+-         *  add_server("[::1]:3979");
+-         */
+-    }
+-
++/* For wasmga.me: the play page writes the game's files before it runs main(),
++ * keeps the player's own files itself, and passes the drivers as arguments.
++ * There is no IndexedDB mount, network play or page to show on exit. */
++Module['preRun'] = Module['preRun'] || [];
++Module['preRun'].push(function() {
+     var leftButtonDown = false;
+     document.addEventListener("mousedown", e => {
+         if (e.button == 0) {
+@@ -99,28 +18,14 @@ Module.preRun.push(function() {
+         const url_string = UTF8ToString(url, url_len);
+         function openWindow() {
+             document.removeEventListener("mouseup", openWindow);
+-            window.open(url_string, '_blank');
++            window.open(url_string, '_blank', 'noopener');
+         }
+         /* Trying to open the URL while the mouse is down results in the button getting stuck, so wait for the
+-         * mouse to be released before opening it. However, when OpenTTD is lagging, the mouse can get released
+-         * before the button click even registers, so check for that, and open the URL immediately if that's the
+-         * case. */
++         * mouse to be released before opening it. */
+         if (leftButtonDown) {
+             document.addEventListener("mouseup", openWindow);
+         } else {
+             openWindow();
+         }
+     }
+-
+-    /* https://github.com/emscripten-core/emscripten/pull/12995 implements this
+-    * properly. Till that time, we use a polyfill. */
+-   SOCKFS.websocket_sock_ops.createPeer_ = SOCKFS.websocket_sock_ops.createPeer;
+-   SOCKFS.websocket_sock_ops.createPeer = function(sock, addr, port)
+-   {
+-       let func = Module['websocket']['url'];
+-       Module['websocket']['url'] = func(addr, port, (sock.type == 2) ? 'udp' : 'tcp');
+-       let ret = SOCKFS.websocket_sock_ops.createPeer_(sock, addr, port);
+-       Module['websocket']['url'] = func;
+-       return ret;
+-   }
+ });
+diff --git a/src/ai/ai_gui.cpp b/src/ai/ai_gui.cpp
+index bdea793..0fed816 100644
+--- a/src/ai/ai_gui.cpp
++++ b/src/ai/ai_gui.cpp
+@@ -65,7 +65,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_ai_config_widgets =
+ 			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
+ 				NWidget(NWID_VERTICAL, NWidContainerFlag::EqualSize),
+ 					NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_AIC_CHANGE), SetFill(1, 1), SetStringTip(STR_AI_CONFIG_CHANGE_AI, STR_AI_CONFIG_CHANGE_TOOLTIP),
++#ifndef __EMSCRIPTEN__
+ 					NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_AIC_CONTENT_DOWNLOAD), SetFill(1, 1), SetStringTip(STR_INTRO_ONLINE_CONTENT, STR_INTRO_TOOLTIP_ONLINE_CONTENT),
++#endif
+ 				EndContainer(),
+ 				NWidget(NWID_VERTICAL, NWidContainerFlag::EqualSize),
+ 					NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+diff --git a/src/fios_gui.cpp b/src/fios_gui.cpp
+index 97a6a72..ea50e94 100644
+--- a/src/fios_gui.cpp
++++ b/src/fios_gui.cpp
+@@ -115,7 +115,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_load_dialog_widgets
+ 		NWidget(NWID_VERTICAL),
+ 			NWidget(WWT_PANEL, COLOUR_GREY, WID_SL_DETAILS), SetResize(1, 1), SetFill(1, 1),
+ 			EndContainer(),
++#ifndef __EMSCRIPTEN__
+ 			NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_SL_MISSING_NEWGRFS), SetStringTip(STR_NEWGRF_SETTINGS_FIND_MISSING_CONTENT_BUTTON, STR_NEWGRF_SETTINGS_FIND_MISSING_CONTENT_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
++#endif
+ 			NWidget(NWID_HORIZONTAL),
+ 				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+ 					NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_SL_NEWGRF_INFO), SetStringTip(STR_MAPGEN_NEWGRF_SETTINGS, STR_MAPGEN_NEWGRF_SETTINGS_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+@@ -166,8 +168,10 @@ static constexpr std::initializer_list<NWidgetPart> _nested_load_heightmap_dialo
+ 	EndContainer(),
+ 	/* Online Content and Load button */
+ 	NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
++#ifndef __EMSCRIPTEN__
+ 		NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_SL_CONTENT_DOWNLOAD), SetResize(1, 0), SetFill(1, 0),
+ 				SetStringTip(STR_INTRO_ONLINE_CONTENT, STR_INTRO_TOOLTIP_ONLINE_CONTENT),
++#endif
+ 		NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_SL_LOAD_BUTTON), SetResize(1, 0), SetFill(1, 0),
+ 				SetStringTip(STR_SAVELOAD_LOAD_BUTTON, STR_SAVELOAD_LOAD_HEIGHTMAP_TOOLTIP),
+ 		NWidget(WWT_RESIZEBOX, COLOUR_GREY),
+@@ -400,7 +404,11 @@ public:
+ 		this->filename_editbox.ok_button = WID_SL_SAVE_GAME;
+ 
+ 		this->CreateNestedTree();
++#ifndef __EMSCRIPTEN__
+ 		if (this->fop == SLO_LOAD && this->abstract_filetype == FT_SAVEGAME) {
++#else
++		{
++#endif
+ 			this->GetWidget<NWidgetStacked>(WID_SL_CONTENT_DOWNLOAD_SEL)->SetDisplayedPlane(SZSP_HORIZONTAL);
+ 		}
+ 
+@@ -930,8 +938,10 @@ public:
+ 						}
+ 						this->SetWidgetDisabledState(WID_SL_LOAD_BUTTON, disabled);
+ 						this->SetWidgetDisabledState(WID_SL_NEWGRF_INFO, !_load_check_data.HasNewGrfs());
++#ifndef __EMSCRIPTEN__
+ 						this->SetWidgetDisabledState(WID_SL_MISSING_NEWGRFS,
+ 								!_load_check_data.HasNewGrfs() || _load_check_data.grf_compatibility == GLC_ALL_GOOD);
++#endif
+ 						break;
+ 					}
+ 
+diff --git a/src/game/game_gui.cpp b/src/game/game_gui.cpp
+index b5df0f8..839a0d3 100644
+--- a/src/game/game_gui.cpp
++++ b/src/game/game_gui.cpp
+@@ -54,7 +54,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_gs_config_widgets =
+ 			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
+ 				NWidget(NWID_VERTICAL, NWidContainerFlag::EqualSize),
+ 					NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_GSC_CHANGE), SetFill(1, 1), SetResize(1, 0), SetStringTip(STR_AI_CONFIG_CHANGE_GAMESCRIPT, STR_AI_CONFIG_CHANGE_TOOLTIP),
++#ifndef __EMSCRIPTEN__
+ 					NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_GSC_CONTENT_DOWNLOAD), SetFill(1, 1), SetResize(1, 0), SetStringTip(STR_INTRO_ONLINE_CONTENT, STR_INTRO_TOOLTIP_ONLINE_CONTENT),
++#endif
+ 				EndContainer(),
+ 				NWidget(NWID_VERTICAL, NWidContainerFlag::EqualSize),
+ 					NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+diff --git a/src/intro_gui.cpp b/src/intro_gui.cpp
+index d441474..1cbde29 100644
+--- a/src/intro_gui.cpp
++++ b/src/intro_gui.cpp
+@@ -356,10 +356,12 @@ static constexpr std::initializer_list<NWidgetPart> _nested_select_game_widgets
+ 				NWidget(WWT_PUSHIMGTEXTBTN, COLOUR_ORANGE, WID_SGI_HIGHSCORE), SetToolbarMinimalSize(1), SetSpriteStringTip(SPR_IMG_COMPANY_LEAGUE, STR_INTRO_HIGHSCORE, STR_INTRO_TOOLTIP_HIGHSCORE), SetAlignment(SA_LEFT | SA_VERT_CENTER), SetFill(1, 0),
+ 			EndContainer(),
+ 
++#ifndef __EMSCRIPTEN__
+ 			/* Multi player */
+ 			NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
+ 				NWidget(WWT_PUSHIMGTEXTBTN, COLOUR_ORANGE, WID_SGI_PLAY_NETWORK), SetToolbarMinimalSize(1), SetSpriteStringTip(SPR_IMG_COMPANY_GENERAL, STR_INTRO_MULTIPLAYER, STR_INTRO_TOOLTIP_MULTIPLAYER), SetAlignment(SA_LEFT | SA_VERT_CENTER), SetFill(1, 0),
+ 			EndContainer(),
++#endif
+ 
+ 			NWidget(NWID_SELECTION, INVALID_COLOUR, WID_SGI_BASESET_SELECTION),
+ 				NWidget(NWID_VERTICAL),
+@@ -376,14 +378,18 @@ static constexpr std::initializer_list<NWidgetPart> _nested_select_game_widgets
+ 			/* Other */
+ 			NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
+ 				NWidget(WWT_PUSHIMGTEXTBTN, COLOUR_ORANGE, WID_SGI_OPTIONS), SetToolbarMinimalSize(1), SetSpriteStringTip(SPR_IMG_SETTINGS, STR_INTRO_GAME_OPTIONS, STR_INTRO_TOOLTIP_GAME_OPTIONS), SetAlignment(SA_LEFT | SA_VERT_CENTER), SetFill(1, 0),
++#ifndef __EMSCRIPTEN__
+ 				NWidget(WWT_PUSHIMGTEXTBTN, COLOUR_ORANGE, WID_SGI_CONTENT_DOWNLOAD), SetToolbarMinimalSize(1), SetSpriteStringTip(SPR_IMG_SHOW_VEHICLES, STR_INTRO_ONLINE_CONTENT, STR_INTRO_TOOLTIP_ONLINE_CONTENT), SetAlignment(SA_LEFT | SA_VERT_CENTER), SetFill(1, 0),
++#endif
+ 				NWidget(WWT_PUSHIMGTEXTBTN, COLOUR_ORANGE, WID_SGI_EDIT_SCENARIO), SetToolbarMinimalSize(1), SetSpriteStringTip(SPR_IMG_SMALLMAP, STR_INTRO_SCENARIO_EDITOR, STR_INTRO_TOOLTIP_SCENARIO_EDITOR), SetAlignment(SA_LEFT | SA_VERT_CENTER), SetFill(1, 0),
+ 				NWidget(WWT_PUSHIMGTEXTBTN, COLOUR_ORANGE, WID_SGI_HELP), SetToolbarMinimalSize(1), SetSpriteStringTip(SPR_IMG_QUERY, STR_INTRO_HELP, STR_INTRO_TOOLTIP_HELP), SetAlignment(SA_LEFT | SA_VERT_CENTER), SetFill(1, 0),
+ 			EndContainer(),
+ 
++#ifndef __EMSCRIPTEN__
+ 			NWidget(NWID_VERTICAL),
+ 				NWidget(WWT_PUSHTXTBTN, COLOUR_ORANGE, WID_SGI_EXIT), SetToolbarMinimalSize(1), SetStringTip(STR_INTRO_QUIT, STR_INTRO_TOOLTIP_QUIT),
+ 			EndContainer(),
++#endif
+ 		EndContainer(),
+ 	EndContainer(),
+ };
+diff --git a/src/music/fluidsynth.cpp b/src/music/fluidsynth.cpp
+index b46e4c2..e7da539 100644
+--- a/src/music/fluidsynth.cpp
++++ b/src/music/fluidsynth.cpp
+@@ -82,6 +82,12 @@ std::optional<std::string_view> MusicDriver_FluidSynth::Start(const StringList &
+ 	Debug(driver, 1, "Fluidsynth: sf {}", sfont_name.has_value() ? *sfont_name : "(null)");
+ 
+ 	/* Create the settings. */
++#ifdef __EMSCRIPTEN__
++	/* Keep the synth's warnings about the songs out of the page's console. */
++	fluid_set_log_function(FLUID_WARN, nullptr, nullptr);
++	fluid_set_log_function(FLUID_INFO, nullptr, nullptr);
++	fluid_set_log_function(FLUID_DBG, nullptr, nullptr);
++#endif
+ 	_midi.settings = new_fluid_settings();
+ 	if (_midi.settings == nullptr) return "Could not create midi settings";
+ 
+diff --git a/src/network/network_survey.h b/src/network/network_survey.h
+index 6d39de6..954d11f 100644
+--- a/src/network/network_survey.h
++++ b/src/network/network_survey.h
+@@ -36,7 +36,12 @@ public:
+ 
+ 	constexpr static bool IsSurveyPossible()
+ 	{
++#ifdef __EMSCRIPTEN__
++		/* Single player only: nothing is sent from the web build. */
++		return false;
++#else
+ 		return true;
++#endif
+ 	}
+ 
+ private:
+diff --git a/src/newgrf_gui.cpp b/src/newgrf_gui.cpp
+index e089832..486255c 100644
+--- a/src/newgrf_gui.cpp
++++ b/src/newgrf_gui.cpp
+@@ -1285,8 +1285,10 @@ struct NewGRFWindow : public Window, NewGRFScanCallback {
+ 			text = STR_INTRO_ONLINE_CONTENT;
+ 			tool_tip = STR_INTRO_TOOLTIP_ONLINE_CONTENT;
+ 		}
++#ifndef __EMSCRIPTEN__
+ 		this->GetWidget<NWidgetCore>(WID_NS_CONTENT_DOWNLOAD)->SetStringTip(text, tool_tip);
+ 		this->GetWidget<NWidgetCore>(WID_NS_CONTENT_DOWNLOAD2)->SetStringTip(text, tool_tip);
++#endif
+ 
+ 		this->SetWidgetDisabledState(WID_NS_PRESET_SAVE, has_missing);
+ 	}
+@@ -1792,8 +1794,10 @@ static constexpr std::initializer_list<NWidgetPart> _nested_newgrf_actives_widge
+ 				NWidget(NWID_VERTICAL, NWidContainerFlag::EqualSize),
+ 					NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_NS_RESCAN_FILES2), SetFill(1, 0), SetResize(1, 0),
+ 							SetStringTip(STR_NEWGRF_SETTINGS_RESCAN_FILES, STR_NEWGRF_SETTINGS_RESCAN_FILES_TOOLTIP),
++#ifndef __EMSCRIPTEN__
+ 					NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_NS_CONTENT_DOWNLOAD2), SetFill(1, 0), SetResize(1, 0),
+ 							SetStringTip(STR_INTRO_ONLINE_CONTENT, STR_INTRO_TOOLTIP_ONLINE_CONTENT),
++#endif
+ 				EndContainer(),
+ 			EndContainer(),
+ 		EndContainer(),
+@@ -1826,8 +1830,10 @@ static constexpr std::initializer_list<NWidgetPart> _nested_newgrf_availables_wi
+ 			NWidget(NWID_VERTICAL),
+ 				NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_NS_RESCAN_FILES), SetFill(1, 0), SetResize(1, 0),
+ 						SetStringTip(STR_NEWGRF_SETTINGS_RESCAN_FILES, STR_NEWGRF_SETTINGS_RESCAN_FILES_TOOLTIP),
++#ifndef __EMSCRIPTEN__
+ 				NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WID_NS_CONTENT_DOWNLOAD), SetFill(1, 0), SetResize(1, 0),
+ 						SetStringTip(STR_INTRO_ONLINE_CONTENT, STR_INTRO_TOOLTIP_ONLINE_CONTENT),
++#endif
+ 			EndContainer(),
+ 		EndContainer(),
+ 	EndContainer(),
+diff --git a/src/openttd.cpp b/src/openttd.cpp
+index 7d585b0..79dd901 100644
+--- a/src/openttd.cpp
++++ b/src/openttd.cpp
+@@ -91,6 +91,7 @@
+ #ifdef __EMSCRIPTEN__
+ #	include <emscripten.h>
+ #	include <emscripten/html5.h>
++#	include <filesystem>
+ #endif
+ 
+ #include "safeguards.h"
+@@ -816,6 +817,9 @@ int openttd_main(std::span<std::string_view> arguments)
+ 
+ void HandleExitGameRequest()
+ {
++#ifdef __EMSCRIPTEN__
++	return;
++#endif
+ 	if (_game_mode == GM_MENU || _game_mode == GM_BOOTSTRAP) { // do not ask to quit on the main screen
+ 		_exit_game = true;
+ 	} else if (_settings_client.gui.autosave_on_exit) {
+@@ -1333,8 +1337,61 @@ bool RequestNewGRFScan(NewGRFScanCallback *callback)
+ 	return true;
+ }
+ 
++#ifdef __EMSCRIPTEN__
++/* The play page's hooks: the Resume snapshot, and writing the player's files
++ * before the page goes (the game never quits, so it would not write them). */
++static bool _wg_snapshot_wanted = false;
++static bool _wg_restore_wanted = false;
++static bool _wg_files_wanted = false;
++static int _wg_snapshot_count = 0;
++
++extern "C" {
++/** Asks for the game in progress in /wg/snapshot.sav, written at the top of the next game loop; none on the title screen or in the editor. */
++EMSCRIPTEN_KEEPALIVE void wg_request_snapshot() { _wg_snapshot_wanted = true; }
++/** Goes up each time a snapshot is written (or found to be none). */
++EMSCRIPTEN_KEEPALIVE int wg_snapshot_count() { return _wg_snapshot_count; }
++/** Loads /wg/restore.sav on the next game loop. */
++EMSCRIPTEN_KEEPALIVE void wg_restore() { _wg_restore_wanted = true; }
++/** Writes the settings, hotkeys, window sizes and high scores on the next game loop. */
++EMSCRIPTEN_KEEPALIVE void wg_save_files() { _wg_files_wanted = true; }
++}
++
++static void WgPageRequests()
++{
++	if (_wg_files_wanted) {
++		_wg_files_wanted = false;
++		SaveToConfig();
++		SaveHotkeysToConfig();
++		WindowDesc::SaveToConfig();
++		SaveToHighScore();
++	}
++	if (_wg_restore_wanted) {
++		_wg_restore_wanted = false;
++		_file_to_saveload.name = "/wg/restore.sav";
++		_file_to_saveload.SetMode(FIOS_TYPE_FILE, SLO_LOAD);
++		_switch_mode = SM_LOAD_GAME;
++		return;
++	}
++	if (_wg_snapshot_wanted && _switch_mode == SM_NONE) {
++		_wg_snapshot_wanted = false;
++		std::filesystem::remove("/wg/snapshot.sav");
++		if (_game_mode == GM_NORMAL && !_networking) {
++			/* Quick to write, as the page asks every few seconds. */
++			std::string format = _savegame_format;
++			_savegame_format = "zlib:1";
++			SaveOrLoad("/wg/snapshot.sav", SLO_SAVE, DFT_GAME_FILE, NO_DIRECTORY, false);
++			_savegame_format = format;
++		}
++		_wg_snapshot_count++;
++	}
++}
++#endif
++
+ void GameLoop()
+ {
++#ifdef __EMSCRIPTEN__
++	WgPageRequests();
++#endif
+ 	if (_game_mode == GM_BOOTSTRAP) {
+ 		/* Check for UDP stuff */
+ 		if (_network_available) NetworkBackgroundLoop();
+diff --git a/src/settings_gui.cpp b/src/settings_gui.cpp
+index 70e54fc..ce19ac9 100644
+--- a/src/settings_gui.cpp
++++ b/src/settings_gui.cpp
+@@ -446,6 +446,10 @@ struct GameOptionsWindow : Window {
+ 		this->SetTab(GameOptionsWindow::active_tab);
+ 
+ 		if constexpr (!NetworkSurveyHandler::IsSurveyPossible()) this->GetWidget<NWidgetStacked>(WID_GO_SURVEY_SEL)->SetDisplayedPlane(SZSP_NONE);
++#ifdef __EMSCRIPTEN__
++		/* The page sizes the game and owns full screen. */
++		this->GetWidget<NWidgetStacked>(WID_GO_DISPLAY_SEL)->SetDisplayedPlane(SZSP_NONE);
++#endif
+ 	}
+ 
+ 	void OnInit() override
+@@ -773,7 +777,12 @@ struct GameOptionsWindow : Window {
+ 
+ 	void SetTab(WidgetID widget)
+ 	{
++#ifdef __EMSCRIPTEN__
++		/* No social platforms to integrate with in a browser, so no Social tab. */
++		this->SetWidgetsLoweredState(false, WID_GO_TAB_GENERAL, WID_GO_TAB_GRAPHICS, WID_GO_TAB_SOUND, WID_GO_TAB_ADVANCED);
++#else
+ 		this->SetWidgetsLoweredState(false, WID_GO_TAB_GENERAL, WID_GO_TAB_GRAPHICS, WID_GO_TAB_SOUND, WID_GO_TAB_ADVANCED, WID_GO_TAB_SOCIAL);
++#endif
+ 		this->LowerWidget(widget);
+ 		GameOptionsWindow::active_tab = widget;
+ 
+@@ -1560,7 +1569,9 @@ struct GameOptionsWindow : Window {
+ 			this->SetWidgetDisabledState(WID_GO_BASE_MUSIC_TEXTFILE + tft, BaseMusic::GetUsedSet() == nullptr || !BaseMusic::GetUsedSet()->GetTextfile(tft).has_value());
+ 		}
+ 
++#ifndef __EMSCRIPTEN__
+ 		this->SetWidgetsDisabledState(!_network_available, WID_GO_BASE_GRF_CONTENT_DOWNLOAD, WID_GO_BASE_SFX_CONTENT_DOWNLOAD, WID_GO_BASE_MUSIC_CONTENT_DOWNLOAD);
++#endif
+ 
+ 		/* Update which settings are to be visible. */
+ 		RestrictionMode min_level = (this->filter.mode <= RM_ALL) ? this->filter.mode : RM_BASIC;
+@@ -1613,7 +1624,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_game_options_widgets
+ 			NWidget(WWT_TEXTBTN, GAME_OPTIONS_BUTTON, WID_GO_TAB_GENERAL),  SetMinimalTextLines(2, 0), SetStringTip(STR_GAME_OPTIONS_TAB_GENERAL, STR_GAME_OPTIONS_TAB_GENERAL_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+ 			NWidget(WWT_TEXTBTN, GAME_OPTIONS_BUTTON, WID_GO_TAB_GRAPHICS), SetMinimalTextLines(2, 0), SetStringTip(STR_GAME_OPTIONS_TAB_GRAPHICS, STR_GAME_OPTIONS_TAB_GRAPHICS_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+ 			NWidget(WWT_TEXTBTN, GAME_OPTIONS_BUTTON, WID_GO_TAB_SOUND),    SetMinimalTextLines(2, 0), SetStringTip(STR_GAME_OPTIONS_TAB_SOUND, STR_GAME_OPTIONS_TAB_SOUND_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
++#ifndef __EMSCRIPTEN__
+ 			NWidget(WWT_TEXTBTN, GAME_OPTIONS_BUTTON, WID_GO_TAB_SOCIAL),   SetMinimalTextLines(2, 0), SetStringTip(STR_GAME_OPTIONS_TAB_SOCIAL, STR_GAME_OPTIONS_TAB_SOCIAL_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
++#endif
+ 			NWidget(WWT_TEXTBTN, GAME_OPTIONS_BUTTON, WID_GO_TAB_ADVANCED), SetMinimalTextLines(2, 0), SetStringTip(STR_GAME_OPTIONS_TAB_ADVANCED, STR_GAME_OPTIONS_TAB_ADVANCED_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+ 		EndContainer(),
+ 	EndContainer(),
+@@ -1680,6 +1693,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_game_options_widgets
+ 						EndContainer(),
+ 					EndContainer(),
+ 
++					NWidget(NWID_SELECTION, INVALID_COLOUR, WID_GO_DISPLAY_SEL),
+ 					NWidget(WWT_FRAME, GAME_OPTIONS_BACKGROUND), SetStringTip(STR_GAME_OPTIONS_DISPLAY), SetTextStyle(GAME_OPTIONS_FRAME),
+ 						NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
+ 							NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0),
+@@ -1709,12 +1723,15 @@ static constexpr std::initializer_list<NWidgetPart> _nested_game_options_widgets
+ 							EndContainer(),
+ 						EndContainer(),
+ 					EndContainer(),
++					EndContainer(),
+ 
+ 					NWidget(WWT_FRAME, GAME_OPTIONS_BACKGROUND), SetStringTip(STR_GAME_OPTIONS_BASE_GRF), SetTextStyle(GAME_OPTIONS_FRAME), SetPIP(0, WidgetDimensions::unscaled.vsep_sparse, 0), SetFill(1, 0),
+ 						NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
+ 							NWidget(WWT_DROPDOWN, GAME_OPTIONS_BUTTON, WID_GO_BASE_GRF_DROPDOWN), SetToolTip(STR_GAME_OPTIONS_BASE_GRF_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+ 							NWidget(WWT_PUSHTXTBTN, GAME_OPTIONS_BUTTON, WID_GO_BASE_GRF_PARAMETERS), SetStringTip(STR_NEWGRF_SETTINGS_SET_PARAMETERS),
++#ifndef __EMSCRIPTEN__
+ 							NWidget(WWT_PUSHTXTBTN, GAME_OPTIONS_BUTTON, WID_GO_BASE_GRF_CONTENT_DOWNLOAD), SetStringTip(STR_GAME_OPTIONS_ONLINE_CONTENT, STR_GAME_OPTIONS_ONLINE_CONTENT_TOOLTIP),
++#endif
+ 						EndContainer(),
+ 						NWidget(WWT_TEXT, INVALID_COLOUR, WID_GO_BASE_GRF_DESCRIPTION), SetStringTip(STR_EMPTY, STR_GAME_OPTIONS_BASE_GRF_DESCRIPTION_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+ 						NWidget(NWID_VERTICAL),
+@@ -1749,7 +1766,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_game_options_widgets
+ 					NWidget(WWT_FRAME, GAME_OPTIONS_BACKGROUND), SetStringTip(STR_GAME_OPTIONS_BASE_SFX), SetTextStyle(GAME_OPTIONS_FRAME), SetPIP(0, WidgetDimensions::unscaled.vsep_sparse, 0),
+ 						NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
+ 							NWidget(WWT_DROPDOWN, GAME_OPTIONS_BUTTON, WID_GO_BASE_SFX_DROPDOWN), SetToolTip(STR_GAME_OPTIONS_BASE_SFX_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
++#ifndef __EMSCRIPTEN__
+ 							NWidget(WWT_PUSHTXTBTN, GAME_OPTIONS_BUTTON, WID_GO_BASE_SFX_CONTENT_DOWNLOAD), SetStringTip(STR_GAME_OPTIONS_ONLINE_CONTENT, STR_GAME_OPTIONS_ONLINE_CONTENT_TOOLTIP),
++#endif
+ 						EndContainer(),
+ 						NWidget(WWT_EMPTY, INVALID_COLOUR, WID_GO_BASE_SFX_DESCRIPTION), SetMinimalTextLines(1, 0), SetToolTip(STR_GAME_OPTIONS_BASE_SFX_DESCRIPTION_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+ 						NWidget(NWID_VERTICAL),
+@@ -1767,7 +1786,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_game_options_widgets
+ 					NWidget(WWT_FRAME, GAME_OPTIONS_BACKGROUND), SetStringTip(STR_GAME_OPTIONS_BASE_MUSIC), SetTextStyle(GAME_OPTIONS_FRAME), SetPIP(0, WidgetDimensions::unscaled.vsep_sparse, 0),
+ 						NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
+ 							NWidget(WWT_DROPDOWN, GAME_OPTIONS_BUTTON, WID_GO_BASE_MUSIC_DROPDOWN), SetToolTip(STR_GAME_OPTIONS_BASE_MUSIC_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
++#ifndef __EMSCRIPTEN__
+ 							NWidget(WWT_PUSHTXTBTN, GAME_OPTIONS_BUTTON, WID_GO_BASE_MUSIC_CONTENT_DOWNLOAD), SetStringTip(STR_GAME_OPTIONS_ONLINE_CONTENT, STR_GAME_OPTIONS_ONLINE_CONTENT_TOOLTIP),
++#endif
+ 						EndContainer(),
+ 						NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
+ 							NWidget(WWT_EMPTY, INVALID_COLOUR, WID_GO_BASE_MUSIC_DESCRIPTION), SetMinimalTextLines(1, 0), SetToolTip(STR_GAME_OPTIONS_BASE_MUSIC_DESCRIPTION_TOOLTIP), SetFill(1, 0), SetResize(1, 0),
+diff --git a/src/toolbar_gui.cpp b/src/toolbar_gui.cpp
+index c86465e..a4c8ee2 100644
+--- a/src/toolbar_gui.cpp
++++ b/src/toolbar_gui.cpp
+@@ -370,8 +370,12 @@ enum SaveLoadNormalMenuEntries : uint8_t {
+  */
+ static CallBackFunction ToolbarSaveClick(Window *w)
+ {
++#ifdef __EMSCRIPTEN__
++	PopupMainToolbarMenu(w, WID_TN_SAVE, {STR_FILE_MENU_SAVE_GAME, STR_FILE_MENU_LOAD_GAME, STR_FILE_MENU_QUIT_GAME});
++#else
+ 	PopupMainToolbarMenu(w, WID_TN_SAVE, {STR_FILE_MENU_SAVE_GAME, STR_FILE_MENU_LOAD_GAME, STR_FILE_MENU_QUIT_GAME,
+ 			STR_NULL, STR_FILE_MENU_EXIT});
++#endif
+ 	return CBF_NONE;
+ }
+ 
+@@ -385,7 +389,11 @@ static CallBackFunction ToolbarScenSaveOrLoad(Window *w)
+ {
+ 	PopupMainToolbarMenu(w, WID_TE_SAVE, {STR_SCENEDIT_FILE_MENU_SAVE_SCENARIO, STR_SCENEDIT_FILE_MENU_LOAD_SCENARIO,
+ 			STR_SCENEDIT_FILE_MENU_SAVE_HEIGHTMAP, STR_SCENEDIT_FILE_MENU_LOAD_HEIGHTMAP,
++#ifdef __EMSCRIPTEN__
++			STR_SCENEDIT_FILE_MENU_QUIT_EDITOR});
++#else
+ 			STR_SCENEDIT_FILE_MENU_QUIT_EDITOR, STR_NULL, STR_SCENEDIT_FILE_MENU_QUIT});
++#endif
+ 	return CBF_NONE;
+ }
+ 
+diff --git a/src/video/sdl2_v.cpp b/src/video/sdl2_v.cpp
+index e31afce..2686d60 100644
+--- a/src/video/sdl2_v.cpp
++++ b/src/video/sdl2_v.cpp
+@@ -136,8 +136,17 @@ bool VideoDriver_SDL_Base::CreateMainWindow(uint w, uint h, uint flags)
+ {
+ 	if (this->sdl_window != nullptr) return true;
+ 
++#ifdef __EMSCRIPTEN__
++	/* The page sizes the canvas (wg_resize), not SDL from the browser window. */
++	flags |= SDL_WINDOW_SHOWN;
++#else
+ 	flags |= SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
++#endif
+ 
++#ifdef __EMSCRIPTEN__
++	/* A full screen setting saved elsewhere: the page owns full screen. */
++	_fullscreen = false;
++#endif
+ 	if (_fullscreen) {
+ 		flags |= SDL_WINDOW_FULLSCREEN;
+ 	}
+@@ -630,8 +639,26 @@ void VideoDriver_SDL_Base::InputLoop()
+ 	if (old_ctrl_pressed != _ctrl_pressed) HandleCtrlChanged();
+ }
+ 
++#ifdef __EMSCRIPTEN__
++static int _wg_width = 0;
++static int _wg_height = 0;
++
++/** The page's game area changed size: the game takes it at the top of the next frame. */
++extern "C" EMSCRIPTEN_KEEPALIVE void wg_resize(int w, int h)
++{
++	_wg_width = w;
++	_wg_height = h;
++}
++#endif
++
+ void VideoDriver_SDL_Base::LoopOnce()
+ {
++#ifdef __EMSCRIPTEN__
++	if (_wg_width > 0 && _wg_height > 0) {
++		this->ChangeResolution(_wg_width, _wg_height);
++		_wg_width = _wg_height = 0;
++	}
++#endif
+ 	if (_exit_game) {
+ #ifdef __EMSCRIPTEN__
+ 		/* Emscripten is event-driven, and as such the main loop is inside
+@@ -689,6 +716,10 @@ bool VideoDriver_SDL_Base::ChangeResolution(int w, int h)
+ 
+ bool VideoDriver_SDL_Base::ToggleFullscreen(bool fullscreen)
+ {
++#ifdef __EMSCRIPTEN__
++	/* The page owns full screen. */
++	return !fullscreen;
++#endif
+ 	/* Remember current window size */
+ 	int w, h;
+ 	SDL_GetWindowSize(this->sdl_window, &w, &h);
+diff --git a/src/widgets/settings_widget.h b/src/widgets/settings_widget.h
+index 5ea226a..53f1c6c 100644
+--- a/src/widgets/settings_widget.h
++++ b/src/widgets/settings_widget.h
+@@ -36,6 +36,7 @@ enum GameOptionsWidgets : WidgetID {
+ 	WID_GO_GUI_FONT_AA_TEXT,       ///< Text for anti-alias toggle.
+ 	WID_GO_BASE_GRF_DROPDOWN,      ///< Use to select a base GRF.
+ 	WID_GO_BASE_GRF_PARAMETERS,    ///< Base GRF parameters.
++	WID_GO_DISPLAY_SEL, ///< Selection to hide the display frame.
+ 	WID_GO_BASE_GRF_CONTENT_DOWNLOAD, ///< 'Get Content' button for base GRF.
+ 	WID_GO_BASE_GRF_OPEN_URL,      ///< Open base GRF URL.
+ 	WID_GO_BASE_GRF_TEXTFILE,      ///< Open base GRF readme, changelog (+1) or license (+2).
